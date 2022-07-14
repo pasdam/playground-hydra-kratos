@@ -3,7 +3,7 @@ version: "3.7"
 services:
 
   hydra:
-    image: oryd/hydra:v1.9.2
+    image: oryd/hydra:v1.10.6-alpine
     depends_on:
       - hydra-migrate
     environment:
@@ -18,24 +18,15 @@ services:
     restart: unless-stopped
 
   hydra-migrate:
-    image: oryd/hydra:v1.9.2
+    image: oryd/hydra:v1.10.6-alpine
     command:
       ["migrate", "sql", "--yes", "postgres://hydra:secret@db:5432/hydra?sslmode=disable"]
     depends_on:
       - db
     restart: on-failure
 
-  db:
-    image: postgres:11.6-alpine
-    environment:
-      POSTGRES_DB: hydra
-      POSTGRES_PASSWORD: secret
-      POSTGRES_USER: hydra
-    ports:
-      - 5432:5432
-
   hydra-oauth-example:
-    image: oryd/hydra-login-consent-node:v1.3.2
+    image: oryd/hydra-login-consent-node:v1.10.6
     depends_on:
       - hydra
     environment:
@@ -45,8 +36,17 @@ services:
       - 9020:3000
     restart: unless-stopped
 
+  db:
+    image: postgres:11.9-alpine
+    environment:
+      POSTGRES_DB: hydra
+      POSTGRES_PASSWORD: secret
+      POSTGRES_USER: hydra
+    ports:
+      - 5432:5432
+
   kratos-migrate:
-    image: oryd/kratos:v0.5.5
+    image: oryd/kratos:v0.7.6
     command: -c /etc/config/kratos/kratos.yml migrate sql -e --yes
     environment:
       - DSN=postgres://hydra:secret@db:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
@@ -55,7 +55,7 @@ services:
       - ./kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
 
   kratos:
-    image: oryd/kratos:v0.5.5
+    image: oryd/kratos:v0.7.6
     command: serve -c /etc/config/kratos/kratos.yml --dev
     depends_on:
       - kratos-migrate
@@ -70,7 +70,7 @@ services:
       - ./kratos/:/etc/config/kratos/:ro
 
   kratos-selfservice-ui-node:
-    image: oryd/kratos-selfservice-ui-node:v0.5.0-alpha.1
+    image: oryd/kratos-selfservice-ui-node:v0.7.6-alpha.1
     environment:
       - KRATOS_ADMIN_URL=http://kratos:4434/
       - KRATOS_BROWSER_URL=http://127.0.0.1:4433/
