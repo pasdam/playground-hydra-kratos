@@ -1,31 +1,47 @@
 #!/bin/sh
 
-docker run --rm -it \
-  -e HYDRA_ADMIN_URL=https://host.docker.internal:9001 \
-  oryd/hydra:v1.9.2 \
-  clients delete facebook-photo-backup \
-    --skip-tls-verify 2> /dev/null
+# sources:
+# https://www.ory.sh/docs/hydra/self-hosted/configure-deploy#perform-oauth-20-flow
+# https://www.ory.sh/docs/hydra/5min-tutorial
 
-docker run --rm -it \
-  -e HYDRA_ADMIN_URL=https://host.docker.internal:9001 \
-  --network playground-hydra-kratos_default \
-  oryd/hydra:v1.9.2 \
-  clients create \
-    --id facebook-photo-backup \
-    --skip-tls-verify \
-    --secret some-secret \
-    --grant-types authorization_code,refresh_token,client_credentials,implicit \
-    --response-types token,code,id_token \
-    --scope openid,offline,photos.read \
-    --callbacks http://127.0.0.1:9010/callback
+CLIENT_NAME=facebook-photo-backup
+CLIENT_SECRET=some-secret
 
-docker run --rm -it \
-  -p 9010:9010 \
-  oryd/hydra:v1.9.2 \
-  token user --skip-tls-verify \
-    --port 9010 \
-    --auth-url https://localhost:9000/oauth2/auth \
-    --token-url https://host.docker.internal:9000/oauth2/token \
-    --client-id facebook-photo-backup \
-    --client-secret some-secret \
-    --scope openid,offline,photos.read
+CLIENT_ID=$(docker compose exec hydra \
+  hydra list clients \
+    --endpoint http://127.0.0.1:4445 \
+    --format json | jq -r ".items[] | select(.client_name == \"$CLIENT_NAME\") | .client_id")
+
+# docker compose exec hydra \
+#   hydra delete client $CLIENT_ID \
+#     --endpoint http://localhost:4445 \
+#     --quiet
+# exit 0
+
+if [ -z "$CLIENT_ID" ]; then
+  echo "Client $CLIENT_NAME not found, creating it"
+
+  docker compose exec hydra \
+    hydra create client \
+      --endpoint http://127.0.0.1:4445 \
+      --grant-type authorization_code \
+      --grant-type client_credentials \
+      --grant-type implicit \
+      --grant-type refresh_token \
+      --name $CLIENT_NAME \
+      --redirect-uri http://127.0.0.1:5555/callback \
+      --response-type code \
+      --response-type id_token \
+      --response-type token \
+      --scope openid,offline,photos.read \
+      --secret $CLIENT_SECRET
+fi
+
+docker compose exec hydra \
+  hydra perform authorization-code \
+    --client-id $CLIENT_ID \
+    --client-secret $CLIENT_SECRET \
+    --endpoint http://localhost:4444/ \
+    --port 5555 \
+    --scope offline \
+    --scope openid

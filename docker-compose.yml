@@ -1,88 +1,107 @@
-version: "3.7"
-
 services:
+  db:
+    image: postgres:16.2-alpine3.19
+    environment:
+      POSTGRES_PASSWORD: secret
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydra"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - 5432:5432
+    volumes:
+      - ./hydra/init-db.sql:/docker-entrypoint-initdb.d/hydra.sql:ro
+      - ./kratos/init-db.sql:/docker-entrypoint-initdb.d/kratos.sql:ro
+      - ./postgres/data:/var/lib/postgresql/data
 
-  hydra:
-    image: oryd/hydra:v1.9.2
-    depends_on:
-      - hydra-migrate
+  hydra-migrate:
+    image: oryd/hydra:v2.2.0
+    command: migrate sql -e --yes
     environment:
       DSN: postgres://hydra:secret@db:5432/hydra?sslmode=disable
+    restart: on-failure
+    volumes:
+      - ./hydra/data:/var/lib/sqlite
+
+  hydra:
+    image: oryd/hydra:v2.2.0
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    environment:
+      DEV: true
+      DSN: postgres://hydra:secret@db:5432/hydra?sslmode=disable
+      LOG_LEVEL: debug
+      OAUTH2_EXPOSE_INTERNAL_ERRORS: true
       SECRETS_SYSTEM: insecure-secret0 # This should be a secure random value
       URLS_CONSENT: http://localhost:9020/consent
       URLS_LOGIN: http://localhost:9020/login
-      URLS_SELF_ISSUER: https://localhost:9000/
+      URLS_SELF_ISSUER: http://localhost:4444/
     ports:
-      - 9000:4444
-      - 9001:4445
+      - 4444:4444
+      - 4445:4445
+      - 5555:5555
     restart: unless-stopped
+    volumes:
+      - ./hydra/data:/var/lib/sqlite
 
-  hydra-migrate:
-    image: oryd/hydra:v1.9.2
-    command:
-      ["migrate", "sql", "--yes", "postgres://hydra:secret@db:5432/hydra?sslmode=disable"]
-    depends_on:
-      - db
-    restart: on-failure
-
-  db:
-    image: postgres:11.6-alpine
+  kratos-migrate:
+    image: oryd/kratos:v1.1.0
+    command: -c /etc/config/kratos/kratos.yml migrate sql -e --yes
     environment:
-      POSTGRES_DB: hydra
-      POSTGRES_PASSWORD: secret
-      POSTGRES_USER: hydra
-    ports:
-      - 5432:5432
+      DSN: postgres://kratos:secret@db:5432/kratos?sslmode=disable
+    restart: on-failure
+    volumes:
+      - ./kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
+      - ./kratos/data:/var/lib/sqlite
 
-  hydra-oauth-example:
-    image: oryd/hydra-login-consent-node:v1.3.2
+  kratos:
+    image: oryd/kratos:v1.1.0
+    command: serve -c /etc/config/kratos/kratos.yml --dev
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    environment:
+      DSN: postgres://kratos:secret@db:5432/kratos?sslmode=disable
+      LOG_LEVEL: debug
+    ports:
+      - 4433:4433 # public
+      - 4434:4434 # admin
+    restart: unless-stopped
+    volumes:
+      - ./kratos/data:/var/lib/sqlite
+      - ./kratos/identity.schema.json:/etc/config/kratos/identity.schema.json:ro
+      - ./kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
+
+  consent:
+    image: oryd/hydra-login-consent-node:v2.2.0
     depends_on:
       - hydra
     environment:
-      HYDRA_ADMIN_URL: https://hydra:4445
+      HYDRA_ADMIN_URL: http://hydra:4445
       NODE_TLS_REJECT_UNAUTHORIZED: 0
     ports:
       - 9020:3000
     restart: unless-stopped
 
-  kratos-migrate:
-    image: oryd/kratos:v0.5.5
-    command: -c /etc/config/kratos/kratos.yml migrate sql -e --yes
-    environment:
-      - DSN=postgres://hydra:secret@db:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
-    restart: on-failure
-    volumes:
-      - ./kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
-
-  kratos:
-    image: oryd/kratos:v0.5.5
-    command: serve -c /etc/config/kratos/kratos.yml --dev
-    depends_on:
-      - kratos-migrate
-    environment:
-      - DSN=postgres://hydra:secret@db:5432/hydra?sslmode=disable&max_conns=20&max_idle_conns=4
-      - LOG_LEVEL=trace
-    ports:
-      - '4433:4433' # public
-      - '4434:4434' # admin
-    restart: unless-stopped
-    volumes:
-      - ./kratos/:/etc/config/kratos/:ro
-
   kratos-selfservice-ui-node:
-    image: oryd/kratos-selfservice-ui-node:v0.5.0-alpha.1
+    image: oryd/kratos-selfservice-ui-node:v0.14.0
     environment:
-      - KRATOS_ADMIN_URL=http://kratos:4434/
-      - KRATOS_BROWSER_URL=http://127.0.0.1:4433/
-      - KRATOS_PUBLIC_URL=http://kratos:4433/
-      - PORT=4455
-      - SECURITY_MODE=
+      COOKIE_SECRET: insecure-secret0 # This should be a secure random value
+      CSRF_COOKIE_NAME: some-name
+      CSRF_COOKIE_SECRET: abcd0123
+      KRATOS_ADMIN_URL: http://kratos:4434/
+      KRATOS_BROWSER_URL: http://127.0.0.1:4433/
+      KRATOS_PUBLIC_URL: http://kratos:4433/
+      PORT: 4455
+      SECURITY_MODE:
     ports:
-      - "4455:4455"
+      - 4455:4455
     restart: on-failure
 
   mailslurper:
     image: oryd/mailslurper:latest-smtps
     ports:
-      - '4436:4436'
-      - '4437:4437'
+      - 4436:4436
+      - 4437:4437

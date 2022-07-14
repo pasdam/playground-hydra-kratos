@@ -1,0 +1,3 @@
+CREATE USER kratos WITH PASSWORD 'secret';
+CREATE DATABASE kratos;
+ALTER DATABASE kratos OWNER TO kratos;
