@@ -14,16 +14,18 @@ CLIENT_ID=$(docker compose exec hydra \
 
 # docker compose exec hydra \
 #   hydra delete client $CLIENT_ID \
-#     --endpoint http://localhost:4445 \
+#     --endpoint http://127.0.0.1:4445 \
 #     --quiet
+# CLIENT_ID=
 # exit 0
 
 if [ -z "$CLIENT_ID" ]; then
   echo "Client $CLIENT_NAME not found, creating it"
 
-  docker compose exec hydra \
+  CLIENT_ID=$(docker compose exec hydra \
     hydra create client \
       --endpoint http://127.0.0.1:4445 \
+      --format json \
       --grant-type authorization_code \
       --grant-type client_credentials \
       --grant-type implicit \
@@ -34,14 +36,14 @@ if [ -z "$CLIENT_ID" ]; then
       --response-type id_token \
       --response-type token \
       --scope openid,offline,photos.read \
-      --secret $CLIENT_SECRET
+      --secret $CLIENT_SECRET | jq -r ".client_id")
 fi
 
 docker compose exec hydra \
   hydra perform authorization-code \
     --client-id $CLIENT_ID \
     --client-secret $CLIENT_SECRET \
-    --endpoint http://localhost:4444/ \
+    --endpoint http://127.0.0.1:4444/ \
     --port 5555 \
     --scope offline \
     --scope openid

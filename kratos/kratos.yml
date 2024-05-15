@@ -4,11 +4,11 @@ dsn: memory
 
 serve:
   public:
-    base_url: http://127.0.0.1:4433/
+    base_url: http://127.0.0.1:4433
     cors:
       enabled: true
   admin:
-    base_url: http://kratos:4434/
+    base_url: http://kratos:4434
 
 selfservice:
   allowed_return_urls:
@@ -60,7 +60,6 @@ selfservice:
             - hook: show_verification_ui
 
 log:
-  level: debug
   format: text
   leak_sensitive_values: true
 
@@ -85,3 +84,6 @@ identity:
 courier:
   smtp:
     connection_uri: smtps://test:test@mailslurper:1025/?skip_ssl_verify=true
+
+oauth2_provider:
+  url: http://hydra:4445 # Integrate Kratos and Hydra
